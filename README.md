@@ -16,3 +16,7 @@ Importantly, the application incorporates measures to respect the rate limits im
 ## License
 
 - MIT
+
+
+[!["Buy Me A Coffee"](https://cdn.buymeacoffee.com/buttons/v2/default-yellow.png)](https://www.buymeacoffee.com/ahmadshamli)
+
