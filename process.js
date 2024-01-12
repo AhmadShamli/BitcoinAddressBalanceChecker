@@ -1,18 +1,14 @@
-const maxRetries = 5;
-const retryDelaySeconds = 30;
 const delaySeconds = 12;
 let processing = false;
 let nextgetaddresstime = 0;
 let currentrunning = 0;
 let countdownInterval;
-let lastline = 0;
-let totaladdress = 0;
-let addressperrun = 0;
 let totalthisrun = 0;
+let instanceName = "";
 
 function updateStats() {
     const stats = document.getElementById('stats');
-    stats.textContent = `Last Line: ${lastline} | Total Address: ${totaladdress} | Done: ${roundNumber(lastline/totaladdress*100, 4)}%`;
+    stats.textContent = `Total this run: ${totalthisrun}`;
 }
 
 function roundNumber(num, scale) {
@@ -108,10 +104,13 @@ function changeButton() {
 
 function startStopProcess() {
     const button = document.getElementById('processButton');
+    instanceName = document.getElementById('instanceName').value;
 
     if (!processing) {
         processing = true;
         changeButton();
+        resetTimer();
+        nextgetaddresstime = 0;
         sendmessage("Starting")
         go();
     } else {
@@ -125,13 +124,15 @@ function startStopProcess() {
 function go() {
     function checkProcessing() {
         console.log("processing:" + processing + " currentrunning: " + currentrunning + " nextgetaddresstime: " + nextgetaddresstime);
-        if (processing && currentrunning === 0 && nextgetaddresstime <= 0) {
-            currentrunning++;
-            updateStats();
-            resetTimer();
-            getAddress();
+        if (processing) {
+            if (currentrunning === 0 && nextgetaddresstime <= 0) {
+                currentrunning++;
+                updateStats();
+                resetTimer();
+                getAddress();
+            }
+            setTimeout(checkProcessing, 1000);
         }
-        setTimeout(checkProcessing, 1000);
     }
 
     checkProcessing();
@@ -142,20 +143,18 @@ function getAddress() {
     $.ajax({
         url: 'address.php?getaddress',
         type: 'GET',
+        data:  { instanceName: instanceName },
         success: function(response) {
             console.log('Server response:', response);
             sendmessage("Addresses received.");
             resetTimer();
-            lastline = response.last_processed_line;
-            totaladdress = response.total_addresses;
-            addressperrun = response.address_count;
             updateStats();
             getBalancesFromBlockchainInfo(response);
         },
         error: function(error) {
             currentrunning--;
             resetTimer();
-            processing = false;
+            //processing = false;
             sendmessage("Error: " + error.responseText, 'error');
             return false;
         }
@@ -176,8 +175,7 @@ function processAddressesFromJson(dataJson) {
 
 function getBalancesFromBlockchainInfo(objdata) {
     sendmessage("Getting address balance.");
-    const addresses = objdata.addresses;
-    lastline = objdata.last_processed_line;
+    const addresses = objdata.responsedata.addresses;
     $.ajax({
         url: 'https://blockchain.info/multiaddr',
         type: 'GET',
@@ -199,37 +197,29 @@ function processingBalance(data,objdata) {
     const processedAddresses = [];
     sendmessage("Processing address balance.");
     data.addresses.forEach(addr => {
-        const balance = addr.final_balance / 1e8;
-
-        if (balance < 0.01) {
-            // Ignore addresses below 0.01 BTC
-            return;
-        } else if (balance < 1) {
-            processedAddresses.push({ address: addr.address, category: 'below_1btc' });
-        } else {
-            processedAddresses.push({ address: addr.address, category: 'above_1btc' });
-        }
+        processedAddresses.push({ address: addr.address, balance: addr.final_balance });
+        totalthisrun++;
     });
 
-    sendProcessedAddresses([processedAddresses,{address_count:objdata.address_count,last_processed_line:objdata.last_processed_line}]);
+    sendBlockchainData([processedAddresses,{address_count:objdata.address_count,last_processed_line:objdata.last_processed_line}]);
     sendmessage('Addresses processed successfully');
 }
 
-function sendProcessedAddresses(processedAddresses) {
+
+function sendBlockchainData(data) {
     sendmessage("Sending data to server.");
     $.ajax({
         url: 'address.php',
         type: 'POST',
-        data: { processedAddresses: JSON.stringify(processedAddresses) },
+        data: { blockchainData: JSON.stringify(data) },
         success: function(response) {
             console.log(response);
             sendmessage('Data sent successfully.');
-            totalthisrun += addressperrun;
             currentrunning--;
         },
         error: function(error) {
             currentrunning--;
-            sendmessage('Error sending processed addresses: ' + error.responseText,'error');
+            sendmessage('Error sending blockchain data: ' + error.responseText,'error');
         }
     });
 }
